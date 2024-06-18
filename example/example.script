@@ -10,6 +10,8 @@ function init(self)
 	protoc:loadfile("resources/test.proto")
 
 	local data = {
+		player_id = 1213;
+		app_version_str = "some string",
 		values = {
 			first = {
 				number = 1.5,
@@ -20,9 +22,14 @@ function init(self)
 				number = 5.5,
 				string = "hello"
 			}
-		}
+		},
+		intarray = {0, 1, 2, 10, 1000}
 	}
 
+	print('validate')
+	local is_ok = pb.validate("some.Example", data)
+
+	print('encode')
 	local bytes = pb.encode("some.Example", data)
 	print("Package to")
 	print(bytes)

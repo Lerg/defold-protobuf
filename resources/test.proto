@@ -5,8 +5,12 @@ package some;
 message Example{
   message Item{
     double float = 1;
-    uint32 unumber = 2;
-    string string = 3;
+    int32 number = 2;
+    uint32 unumber = 3;
+    string string = 4;
   }
-  map<string, Item> values = 1; 
+  int32 player_id = 1;
+  string app_version_str = 2;
+  map<string, Item> values = 3;
+  repeated int32 intarray = 4;
 }

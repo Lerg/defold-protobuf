@@ -17,7 +17,6 @@ PB_NS_BEGIN
 #include "lauxlib.h"
 
 #include <stdio.h>
-#include <errno.h>
 
 
 /* Lua util routines */
@@ -1379,6 +1378,39 @@ static void lpb_checktable(lua_State *L, pb_Field *f) {
             (char*)f->name, luaL_typename(L, -1));
 }
 
+static void lpb_checktablearray(lua_State *L, pb_Field *f) {
+    argcheck(L, lua_istable(L, -1),
+            2, "table expected at field '%s', got %s",
+            (char*)f->name, luaL_typename(L, -1));
+
+    bool is_array = true;
+    int i = 0;
+    lua_pushnil(L); // first key
+    while (lua_next(L, -2) != 0) {
+        ++i;
+        if (lua_type(L, -2) != LUA_TNUMBER || lua_tointeger(L, -2) != i) {
+            is_array = false;
+        }
+        lua_pop(L, 1);
+        if (!is_array) {
+            break;
+        }
+    }
+
+    argcheck(L, is_array,
+            1, "table array expected at field '%s', got table map",
+            (char*)f->name);
+}
+
+static void lpb_checktablemap(lua_State *L, pb_Field *f) {
+    argcheck(L, lua_istable(L, -1),
+            2, "table expected at field '%s', got %s",
+            (char*)f->name, luaL_typename(L, -1));
+    argcheck(L, lua_objlen(L, -1) == 0,
+            1, "table map expected at field '%s', got table array",
+            (char*)f->name);
+}
+
 static void lpbE_enum(lpb_Env *e, pb_Field *f) {
     lua_State *L = e->L;
     pb_Buffer *b = e->b;
@@ -1695,6 +1727,178 @@ static int Lpb_decode(lua_State *L) {
     return lpb_decode(&e, t);
 }
 
+/* protobuf validate */
+static void lpb_validate(lpb_Env *e, pb_Type *t);
+
+static int lpbV_matchtype(int type) {
+    switch (type) {
+    case PB_Tbool:
+        return LUA_TBOOLEAN;
+    case PB_Tenum:
+    case PB_Tint32:
+    case PB_Tuint32:
+    case PB_Tsint32:
+    case PB_Tint64:
+    case PB_Tuint64:
+    case PB_Tsint64:
+    case PB_Tfloat:
+    case PB_Tfixed32:
+    case PB_Tsfixed32:
+    case PB_Tdouble:
+    case PB_Tfixed64:
+    case PB_Tsfixed64:
+        return LUA_TNUMBER;
+    case PB_Tbytes:
+    case PB_Tstring:
+        return LUA_TSTRING;
+    case PB_Tmessage:
+        return LUA_TTABLE;
+    default:
+        return LUA_TNONE;
+    }
+}
+
+static void lpbV_enum(lpb_Env *e, pb_Field *f) {
+    lua_State *L = e->L;
+    int lua_value_type = lua_type(L, -1);
+    if (lua_value_type != lpbV_matchtype(f->type_id)) {
+        luaL_error(L, "enum '%s' value type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(f->type_id)), lua_typename(L, lua_value_type));
+    }
+}
+
+static void lpbV_field(lpb_Env *e, pb_Field *f) {
+    dmLogInfo("lpbV_field %s", (char*)f->name);
+    lua_State *L = e->L;
+    switch (f->type_id) {
+    case PB_Tenum:
+        lpbV_enum(e, f);
+        break;
+
+    case PB_Tmessage:
+        lpb_checktablemap(L, f);
+        lpb_validate(e, f->type);
+        break;
+
+    default:
+        int ltype = lua_type(L, -1);
+        argcheck(L, ltype == lpbV_matchtype(f->type_id),
+                2, "%s expected for field '%s', got %s",
+                lua_typename(L, ltype),
+                (char*)f->name, luaL_typename(L, -1));
+    }
+}
+
+static void lpbV_map(lpb_Env *e, pb_Field *f) {
+    lua_State *L = e->L;
+    pb_Field *kf = pb_field(f->type, 1);
+    pb_Field *vf = pb_field(f->type, 2);
+    if (kf == NULL || vf == NULL) return;
+    dmLogInfo("map key: %s, value: %s", pb_typename(kf->type_id, "UNKNOWN"), pb_typename(vf->type_id, "UNKNOWN"));
+    lpb_checktablemap(L, f);
+    lua_pushnil(L);
+    while (lua_next(L, -2)) {
+        int lua_key_type = lua_type(L, -2);
+        int lua_value_type = lua_type(L, -1);
+        if (lua_key_type != lpbV_matchtype(kf->type_id)) {
+            luaL_error(L, "map '%s' key type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(kf->type_id)), lua_typename(L, lua_key_type));
+        }
+        if (lua_value_type != lpbV_matchtype(vf->type_id)) {
+            luaL_error(L, "map '%s' value type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(vf->type_id)), lua_typename(L, lua_value_type));
+        }
+        dmLogInfo("lua key: %s, value: %s", lua_typename(L, lua_key_type), lua_typename(L, lua_value_type));
+        lpbV_field(e, vf);
+        lua_pop(L, 1);
+    }
+}
+
+static void lpbV_repeated(lpb_Env *e, pb_Field *f) {
+    lua_State *L = e->L;
+    lpb_checktablearray(L, f);
+    for (int i = 1; lua53_rawgeti(L, -1, i) != LUA_TNIL; ++i) {
+        int lua_value_type = lua_type(L, -1);
+        if (lua_value_type != lpbV_matchtype(f->type_id)) {
+            luaL_error(L, "array '%s' value type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(f->type_id)), lua_typename(L, lua_value_type));
+        }
+        dmLogInfo("lua index: %d, value: %s", i, lua_typename(L, lua_value_type));
+        lpbV_field(e, f);
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+}
+
+static void lpb_validate(lpb_Env *e, pb_Type *t) {
+    lua_State *L = e->L;
+    luaL_checkstack(L, 3, "message too many levels");
+    //t->field_names
+    dmArray<const char *> field_names;
+    field_names.SetCapacity(t->field_count);
+    pb_Field *pfield = nullptr;
+    dmLogInfo("Message %s fields:", (char *)t->name);
+    while (pb_nextfield(t, &pfield) != 0) {
+        dmLogInfo("  %s", (char *)pfield->name);
+        if (!pfield->oneof_idx) {
+            field_names.Push((char *)pfield->name);
+        }
+    }
+    lua_pushnil(L);
+    while (lua_next(L, -2)) {
+        int lua_key_type = lua_type(L, -2);
+        if (lua_key_type == LUA_TSTRING) {
+            size_t name_len = 0;
+            const char *name = lua_tolstring(L, -2, &name_len);
+            dmLogInfo("name: %s", name);
+            pb_Field *f = pb_fname(t, pb_name(&e->LS->base, name));
+            if (f == NULL) {
+                dmLogInfo("null");
+                luaL_error(L, "message '%s' table has unrecognized field '%s' of type: %s", (char *)t->name, name, lua_typename(L, lua_type(L, -1)));
+            } else {
+                for (int i = 0; i < field_names.Size(); ++i) {
+                    if (strncmp(name, field_names[i], name_len) == 0) {
+                        field_names.EraseSwap(i);
+                        break;
+                    }
+                }
+                if (f->type && f->type->is_map) {
+                    dmLogInfo("map");
+                    lpbV_map(e, f);
+                } else if (f->repeated) {
+                    dmLogInfo("repeated");
+                    lpbV_repeated(e, f);
+                } else if (!f->type || !f->type->is_dead) {
+                    dmLogInfo("field");
+                    lpbV_field(e, f);
+                }
+            }
+        } else {
+            luaL_error(L, "message '%s' table key type mismatch expected: %s, got: %s", (char *)t->name, lua_typename(L, LUA_TSTRING), lua_typename(L, lua_key_type));
+        }
+        lua_pop(L, 1);
+    }
+    if (field_names.Size() > 0) {
+        const int len = 2048;
+        char names[len] = "";
+        for (int i = 0; i < field_names.Size(); ++i) {
+            strlcat(names, field_names[i], len);
+            if (i < field_names.Size() - 1) {
+                strlcat(names, ", ", len);
+            }
+        }
+        luaL_error(L, "message '%s' table has missing fields: %s", (char *)t->name, names);
+    }
+}
+
+static int Lpb_validate(lua_State *L) {
+    lpb_State *LS = default_lstate(L);
+    pb_Type *t = lpb_type(&LS->base, luaL_checkstring(L, 1));
+    lpb_Env e;
+    argcheck(L, t != NULL, 1, "type '%s' does not exists", lua_tostring(L, 1));
+    luaL_checktype(L, 2, LUA_TTABLE);
+    e.L = L, e.LS = LS;
+    lua_pushvalue(L, 2);
+    lpb_validate(&e, t);
+    lua_pop(L, 1);
+    return 0;
+}
 
 /* pb module interface */
 
@@ -1775,6 +1979,7 @@ static const luaL_reg Module_methods[] =
     {"load", Lpb_load},
     {"loadfile", Lpb_loadfile},
     {"enum", Lpb_enum},
+    {"validate", Lpb_validate},
     {0, 0}
 };
 
