@@ -1,0 +1,331 @@
+syntax = "proto3";
+
+package mergeville.client.proto.v1;
+
+// -----------------------------------------------------------------------------
+// CLIENT REQUEST
+// -----------------------------------------------------------------------------
+
+// Enumeration of every knonw client request types.
+enum RequestType {
+  // Default value of request type for determine invalid requests.
+  REQUEST_TYPE_UNSPECIFIED = 0;
+  // Request type for requesting current user profile state.
+  REQUEST_TYPE_PROFILE_STATE = 1;
+  // Request type for sending action log.
+  REQUEST_TYPE_ACTION_LOG = 2;
+  // Request type for action log state.
+  REQUEST_TYPE_ACTION_LOG_STATE = 3;
+}
+
+// Request contains information that client sends to server.
+message Request {
+  // Information about the user, must be present for every request.
+  User user_id = 1;
+  // Type of the request.
+  RequestType type = 2;
+  // Contents of the user action log that should be vaildate by server.
+  // Must be sent with request type REQUEST_TYPE_ACTION_LOG.
+  PlayerActionLog action_log = 3;
+  // Current state of user profile.
+  // Must be sent with type REQUEST_TYPE_PROFILE_STATE.
+  Profile profile_state = 4;
+  // Result of action log validation by server.
+  // Must be sent with type REQUEST_TYPE_ACTION_LOG.
+  ActionLogState action_log_state = 5;
+}
+
+// Contains information about the user.
+message User {
+  // User identifier.
+  string id = 1;
+}
+
+// PlayerActionLog contains action log data.
+message PlayerActionLog {
+  // Action log content.
+  repeated PlayerAction actions = 1;
+}
+
+// PlayerAction is a single element of the action log, that contains single
+// player action.
+message PlayerAction {
+  // Identifier of user action that must be unique for every action of user.
+  // For the server to be able to determine action sequence each next action
+  // must have an identifier which value is greater than that of the previous
+  // one.
+  uint64 id = 1;
+  uint64 type = 2;
+  uint64 timestamp = 3;
+
+  string user_data = 101;
+}
+
+// Enumeration of every knonwn action state.
+enum ActionLogState {
+  // Default value of action log state for determine invalid responses.
+  ACTION_LOG_STATE_UNSPECIFIED = 0;
+  // State for valid action log.
+  ACTION_LOG_STATE_OK = 1;
+  // State for invalid action log.
+  ACTION_LOG_STATE_ERROR = 2;
+}
+
+//--------utils------------
+message Position {
+  int32 x = 1;
+  int32 y = 2;
+}
+
+message ConsumeItem {
+  int32 id = 1;
+	// Сколько нужно Погрузить
+  int32 qty = 2;
+	// Сколько уже Погрузили
+	oneof optional_qty_done { int32 qty_done = 3; }
+}
+
+//--------attr------------
+message Attr {
+  int32 id = 1;
+  int32 value = 2;
+}
+
+//----------level-----------
+message LevelStep {
+  int32 level_value = 1;
+  int64 levelup_time = 2;
+}
+
+message LevelUp {
+  int32 level_id = 1;
+  repeated LevelStep level_steps = 2;
+}
+
+//----------scene-----------
+message SceneObject {
+  int32 uid = 1;
+  int32 cfg_id = 2;
+  oneof optional_create_time { int64 create_time = 3; }
+  oneof optional_hp { int32 hp = 4; }
+  Position position = 5;
+  oneof optional_is_flip { bool is_flip = 6; }
+}
+
+message SceneObjectRemoveRecord {
+  int32 scene_object_uid = 1;
+  int64 remove_time = 2;
+}
+
+message Expansion {
+  int32 scene_zone_cfg_id = 1;
+  int64 expansion_time = 2;
+}
+
+message TransformerRecipe {
+  int32 cfg_id = 1;
+  int32 transformer_uid = 2;
+  int64 create_time = 3;
+  oneof optional_finish_time { int64 finish_time = 4; }
+  oneof optional_speed_up_seconds { int64 speed_up_seconds = 5; }
+}
+
+message FactoryRecipe {
+  int32 cfg_id = 1;
+  int32 slot_id = 2;
+  int64 create_time = 3;
+  oneof optional_start_time { int64 start_time = 4; }
+  oneof optional_finish_time { int64 finish_time = 5; }
+}
+
+message SlotsState {
+  int32 cfg_id = 1;
+  int64 purcase_time = 2;
+}
+
+message Factory {
+  int32 factory_uid = 1;
+  SlotsState slots = 3;
+
+  repeated FactoryRecipe recipes = 101;
+}
+
+message RewardItem {
+  int32 id = 1;
+  int32 qty = 2;
+}
+
+message OrderBoardOrder {
+	int32 cfg_id = 1;
+	int32 slot_cfg_id = 2;
+  // время создания Заказа
+	int64 create_time = 3;
+  // start_delivery_time время старта отправки
+	oneof optional_start_time  { int64 start_time  = 4; }
+  // start_delivery_time время завершения отправки
+	oneof optional_finish_time { int64 finish_time = 5; }
+	oneof optional_cancel_time { int64 cancel_time = 6; }
+
+	repeated int32 cut_consume_item   = 101;
+	repeated RewardItem reward_item   = 102;
+	repeated ConsumeItem consume_item = 104;
+}
+
+message OrderBoard {
+	int32 cfg_id = 1;
+  // accepted_order
+	oneof optional_current_slot_id { int32 current_slot_id = 2; }
+
+	repeated OrderBoardOrder orders = 101;
+}
+
+message Build {
+  int32 build_uid = 1;
+
+	repeated ConsumeItem consume_item = 101;
+}
+
+message Transformer {
+  int32 transformer_uid = 1;
+  oneof optional_recipe_start_count { int32 recipe_start_count = 2; }
+  oneof optional_last_limit_reset_time { int64 last_limit_reset_time = 3; }
+}
+
+message Scene {
+  int32 id = 1;
+  oneof optional_index_scene_object { int32 index_scene_object = 2; }
+  int64 create_time = 3;
+  oneof optional_enter_time { int64 enter_time = 4; }
+
+  repeated Expansion expansions = 101;
+  repeated SceneObjectRemoveRecord removed_scene_objects = 102;
+  repeated SceneObject updated_scene_objects = 103;
+  repeated TransformerRecipe transformer_recipes = 104;
+  repeated Factory factories = 105;
+  repeated OrderBoard order_boards = 106;
+  repeated Build builds = 107;
+  map<int32, Transformer> transformers = 108;
+}
+
+//----------storage---------
+message Item {
+  int32 cfg_id = 1;
+  int64 quantity = 2;
+}
+
+message Storage {
+  int32 cfg_id = 1;
+  int64 create_time = 2;
+
+  repeated Item items = 101;
+}
+
+//----------cinematic---------
+message CinematicFrame {
+  int32 cfg_id = 1;
+  int64 start_time = 2;
+}
+
+message Cinematic {
+  int32 cfg_id = 1;
+  int64 create_time = 2;
+  oneof optional_complete_time { int64 complete_time = 3; }
+
+  CinematicFrame last_frame = 101;
+}
+
+//----------quest---------
+message QuestGoal {
+  int32 cfg_id = 1;
+  oneof optional_complete_time { int64 complete_time = 2; }
+  int32 count = 3;
+}
+
+message Quest {
+  int32 cfg_id = 1;
+  int64 create_time = 2;
+  oneof optional_complete_time { int64 complete_time = 3; }
+  oneof optional_read_time { int64 read_time = 4; }
+  oneof optional_reward_time { int64 reward_time = 5; }
+
+  repeated QuestGoal goals = 101;
+}
+
+//----------news---------
+message News {
+  int32 cfg_id = 1;
+  oneof optional_read_time { int64 read_time = 2; }
+}
+
+//----------payouts-------
+message Payout {
+  int32 offer_cfg_id = 1;
+  int64 payout_time = 2;
+  oneof optional_ackn_time { int64 ackn_time = 3; }
+}
+
+//---------game-offer-------
+message GameOffer {
+  int32 cfg_id = 1;
+  int64 create_time = 2;
+  oneof optional_show_time { int64 show_time = 3; }
+  oneof optional_end_time { int64 end_time = 4; }
+  oneof optional_buy_time { int64 buy_time = 5; }
+  int32 spawn_counter = 6;
+  int32 buy_counter = 7;
+  oneof optional_cooldown_time { int64 cooldown_time = 8; }
+}
+
+message GameOfferGroup {
+  int32 cfg_id = 1;
+  int32 spawn_amount = 2;
+  int64 create_time = 3;
+  oneof optional_end_time { int64 end_time = 4; }
+  oneof optional_cooldown_time { int64 cooldown_time = 5; }
+}
+
+//---------game-event-------
+message GameEvent {
+  int32 cfg_id = 1;
+  int64 create_time = 2;
+  oneof optional_start_time { int64 start_time = 3; }
+  oneof optional_end_time { int64 end_time = 4; }
+  int32 spawn_counter = 6;
+  oneof optional_cooldown_time { int64 cooldown_time = 7; }
+}
+
+message GameEventGroup {
+  int32 cfg_id = 1;
+  int32 spawn_amount = 2;
+  int64 create_time = 3;
+  oneof optional_end_time { int64 end_time = 4; }
+  oneof optional_cooldown_time { int64 cooldown_time = 5; }
+}
+
+// Profile describes current state of the user profile.
+message Profile {
+  int32 player_id = 1;
+  int32 platform_id = 2;
+  int64 reg_time = 3;
+  int64 login_time = 4;
+  int64 new_day_update_time = 5;
+  int32 current_scene = 6;
+  oneof optional_current_cinematic { int32 current_cinematic = 8; }
+  int32 version = 9;
+  oneof optional_current_vehicle { int32 current_vehicle = 10; }
+  int32 app_version = 11;
+  string app_version_str = 12;
+
+  repeated Attr attrs = 101;
+  repeated LevelUp levelups = 102;
+  repeated Scene scenes = 103;
+  repeated Storage storages = 105;
+  repeated Cinematic cinematics = 106;
+  repeated Quest quests = 107;
+  repeated News news = 108;
+  repeated Payout payouts = 109;
+  repeated GameOffer game_offers = 110;
+  repeated GameOfferGroup game_offer_groups = 111;
+  repeated GameEvent game_events = 112;
+  repeated GameEventGroup game_event_groups = 113;
+}

@@ -1384,17 +1384,21 @@ static void lpb_checktablearray(lua_State *L, pb_Field *f) {
     }
 
     bool is_array = true;
-    int i = 0;
+    int table_length = lua_objlen(L, -1);
+    int count = 0;
     lua_pushnil(L); // first key
     while (lua_next(L, -2) != 0) {
-        ++i;
-        if (lua_type(L, -2) != LUA_TNUMBER || lua_tointeger(L, -2) != i) {
+        ++count;
+        if (lua_type(L, -2) != LUA_TNUMBER) {
             is_array = false;
         }
         lua_pop(L, 1);
         if (!is_array) {
             break;
         }
+    }
+    if (count != table_length) {
+        is_array = false;
     }
 
     if (!is_array) {
@@ -1767,7 +1771,6 @@ static void lpbV_enum(lpb_Env *e, pb_Field *f) {
 }
 
 static void lpbV_field(lpb_Env *e, pb_Field *f) {
-    dmLogInfo("lpbV_field %s", (char*)f->name);
     lua_State *L = e->L;
     switch (f->type_id) {
     case PB_Tenum:
@@ -1792,7 +1795,6 @@ static void lpbV_map(lpb_Env *e, pb_Field *f) {
     pb_Field *kf = pb_field(f->type, 1);
     pb_Field *vf = pb_field(f->type, 2);
     if (kf == NULL || vf == NULL) return;
-    dmLogInfo("map key: %s, value: %s", pb_typename(kf->type_id, "UNKNOWN"), pb_typename(vf->type_id, "UNKNOWN"));
     lpb_checktablemap(L, f);
     lua_pushnil(L);
     while (lua_next(L, -2)) {
@@ -1804,7 +1806,6 @@ static void lpbV_map(lpb_Env *e, pb_Field *f) {
         if (lua_value_type != lpbV_matchtype(vf->type_id)) {
             luaL_error(L, "map '%s' value type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(vf->type_id)), lua_typename(L, lua_value_type));
         }
-        dmLogInfo("lua key: %s, value: %s", lua_typename(L, lua_key_type), lua_typename(L, lua_value_type));
         lpbV_field(e, vf);
         lua_pop(L, 1);
     }
@@ -1813,16 +1814,16 @@ static void lpbV_map(lpb_Env *e, pb_Field *f) {
 static void lpbV_repeated(lpb_Env *e, pb_Field *f) {
     lua_State *L = e->L;
     lpb_checktablearray(L, f);
-    for (int i = 1; lua53_rawgeti(L, -1, i) != LUA_TNIL; ++i) {
+    int lua_length = lua_objlen(L, -1);
+    for (int i = 1; i <= lua_length; ++i) {
+        lua53_rawgeti(L, -1, i);
         int lua_value_type = lua_type(L, -1);
         if (lua_value_type != lpbV_matchtype(f->type_id)) {
             luaL_error(L, "array '%s' value type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(f->type_id)), lua_typename(L, lua_value_type));
         }
-        dmLogInfo("lua index: %d, value: %s", i, lua_typename(L, lua_value_type));
         lpbV_field(e, f);
         lua_pop(L, 1);
     }
-    lua_pop(L, 1);
 }
 
 static void lpb_validate(lpb_Env *e, pb_Type *t) {
@@ -1831,9 +1832,7 @@ static void lpb_validate(lpb_Env *e, pb_Type *t) {
     dmArray<const char *> field_names;
     field_names.SetCapacity(t->field_count);
     pb_Field *pfield = nullptr;
-    dmLogInfo("Message %s fields:", (char *)t->name);
     while (pb_nextfield(t, &pfield) != 0) {
-        dmLogInfo("  %s", (char *)pfield->name);
         if (!pfield->oneof_idx) {
             field_names.Push((char *)pfield->name);
         }
@@ -1844,26 +1843,21 @@ static void lpb_validate(lpb_Env *e, pb_Type *t) {
         if (lua_key_type == LUA_TSTRING) {
             size_t name_len = 0;
             const char *name = lua_tolstring(L, -2, &name_len);
-            dmLogInfo("name: %s", name);
             pb_Field *f = pb_fname(t, pb_name(&e->LS->base, name));
-            if (f == NULL) {
-                dmLogInfo("null");
+            if (f == nullptr) {
                 luaL_error(L, "message '%s' table has unrecognized field '%s' of type: %s", (char *)t->name, name, lua_typename(L, lua_type(L, -1)));
             } else {
                 for (int i = 0; i < field_names.Size(); ++i) {
-                    if (strncmp(name, field_names[i], name_len) == 0) {
+                    if (strncmp(name, field_names[i], name_len + 1) == 0) {
                         field_names.EraseSwap(i);
                         break;
                     }
                 }
                 if (f->type && f->type->is_map) {
-                    dmLogInfo("map");
                     lpbV_map(e, f);
                 } else if (f->repeated) {
-                    dmLogInfo("repeated");
                     lpbV_repeated(e, f);
                 } else if (!f->type || !f->type->is_dead) {
-                    dmLogInfo("field");
                     lpbV_field(e, f);
                 }
             }
