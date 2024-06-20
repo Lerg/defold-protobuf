@@ -1379,9 +1379,9 @@ static void lpb_checktable(lua_State *L, pb_Field *f) {
 }
 
 static void lpb_checktablearray(lua_State *L, pb_Field *f) {
-    argcheck(L, lua_istable(L, -1),
-            2, "table expected at field '%s', got %s",
-            (char*)f->name, luaL_typename(L, -1));
+    if (!lua_istable(L, -1)) {
+        luaL_error(L, "table expected at field '%s', got %s", (char*)f->name, luaL_typename(L, -1));
+    }
 
     bool is_array = true;
     int i = 0;
@@ -1397,18 +1397,18 @@ static void lpb_checktablearray(lua_State *L, pb_Field *f) {
         }
     }
 
-    argcheck(L, is_array,
-            1, "table array expected at field '%s', got table map",
-            (char*)f->name);
+    if (!is_array) {
+        luaL_error(L, "table array expected at field '%s', got table map", (char*)f->name);
+    }
 }
 
 static void lpb_checktablemap(lua_State *L, pb_Field *f) {
-    argcheck(L, lua_istable(L, -1),
-            2, "table expected at field '%s', got %s",
-            (char*)f->name, luaL_typename(L, -1));
-    argcheck(L, lua_objlen(L, -1) == 0,
-            1, "table map expected at field '%s', got table array",
-            (char*)f->name);
+    if (!lua_istable(L, -1)) {
+        luaL_error(L, "table expected at field '%s', got %s", (char*)f->name, luaL_typename(L, -1));
+    }
+    if (lua_objlen(L, -1) != 0) {
+        luaL_error(L, "table map expected at field '%s', got table array", (char*)f->name);
+    }
 }
 
 static void lpbE_enum(lpb_Env *e, pb_Field *f) {
@@ -1781,10 +1781,9 @@ static void lpbV_field(lpb_Env *e, pb_Field *f) {
 
     default:
         int ltype = lua_type(L, -1);
-        argcheck(L, ltype == lpbV_matchtype(f->type_id),
-                2, "%s expected for field '%s', got %s",
-                lua_typename(L, ltype),
-                (char*)f->name, luaL_typename(L, -1));
+        if (ltype != lpbV_matchtype(f->type_id)) {
+            luaL_error(L, "field '%s' type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(f->type_id)), lua_typename(L, ltype));
+        }
     }
 }
 
@@ -1829,7 +1828,6 @@ static void lpbV_repeated(lpb_Env *e, pb_Field *f) {
 static void lpb_validate(lpb_Env *e, pb_Type *t) {
     lua_State *L = e->L;
     luaL_checkstack(L, 3, "message too many levels");
-    //t->field_names
     dmArray<const char *> field_names;
     field_names.SetCapacity(t->field_count);
     pb_Field *pfield = nullptr;
