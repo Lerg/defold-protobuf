@@ -1795,7 +1795,7 @@ static void lpbV_map(lpb_Env *e, pb_Field *f) {
     pb_Field *kf = pb_field(f->type, 1);
     pb_Field *vf = pb_field(f->type, 2);
     if (kf == NULL || vf == NULL) return;
-    lpb_checktablemap(L, f);
+    lpb_checktable(L, f);
     lua_pushnil(L);
     while (lua_next(L, -2)) {
         int lua_key_type = lua_type(L, -2);
