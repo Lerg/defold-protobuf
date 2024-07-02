@@ -1868,11 +1868,15 @@ static void lpb_validate(lpb_Env *e, pb_Type *t) {
     }
     if (field_names.Size() > 0) {
         const int len = 2048;
-        char names[len] = "";
+        char names[len];
+        memset(names, 0, sizeof(names));
         for (int i = 0; i < field_names.Size(); ++i) {
-            strlcat(names, field_names[i], len);
+            // Calculate the remaining buffer size
+            int remaining_len = len - strlen(names) - 1;
+            strncat(names, field_names[i], remaining_len);
             if (i < field_names.Size() - 1) {
-                strlcat(names, ", ", len);
+                remaining_len = len - strlen(names) - 1;
+                strncat(names, ", ", remaining_len);
             }
         }
         luaL_error(L, "message '%s' table has missing fields: %s", (char *)t->name, names);
