@@ -6,18 +6,11 @@
 
 // include the Defold SDK
 #include <dmsdk/sdk.h>
+#include "lua_table_dump.h"
 
 PB_NS_BEGIN
 
-
-#define LUA_LIB
-//#include <lua.h>
-//#include <lauxlib.h>
-#include "lua.h"
-#include "lauxlib.h"
-
 #include <stdio.h>
-
 
 /* Lua util routines */
 
@@ -1363,6 +1356,8 @@ static int Lpb_clear(lua_State *L) {
 
 /* protobuf encode */
 
+static const uint32_t TABLE_DUMP_BUFFER_SIZE = 2048;
+
 typedef struct lpb_Env {
     lua_State *L;
     lpb_State *LS;
@@ -1402,7 +1397,9 @@ static void lpb_checktablearray(lua_State *L, pb_Field *f) {
     }
 
     if (!is_array) {
-        luaL_error(L, "table array expected at field '%s', got table map", (char*)f->name);
+        char table_string[TABLE_DUMP_BUFFER_SIZE] = {0};
+        lua_table_to_string(L, -2, table_string, sizeof(table_string));
+        luaL_error(L, "table array expected at field '%s', got table map. Table: %s", (char*)f->name, table_string);
     }
 }
 
@@ -1411,7 +1408,9 @@ static void lpb_checktablemap(lua_State *L, pb_Field *f) {
         luaL_error(L, "table expected at field '%s', got %s", (char*)f->name, luaL_typename(L, -1));
     }
     if (lua_objlen(L, -1) != 0) {
-        luaL_error(L, "table map expected at field '%s', got table array", (char*)f->name);
+        char table_string[TABLE_DUMP_BUFFER_SIZE] = {0};
+        lua_table_to_string(L, -1, table_string, sizeof(table_string));
+        luaL_error(L, "table map expected at field '%s', got table array. Table: %s", (char*)f->name, table_string);
     }
 }
 
@@ -1766,7 +1765,9 @@ static void lpbV_enum(lpb_Env *e, pb_Field *f) {
     lua_State *L = e->L;
     int lua_value_type = lua_type(L, -1);
     if (lua_value_type != lpbV_matchtype(f->type_id)) {
-        luaL_error(L, "enum '%s' value type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(f->type_id)), lua_typename(L, lua_value_type));
+        char value_string[TABLE_DUMP_BUFFER_SIZE] = {0};
+        lua_value_to_string(L, -1, value_string, sizeof(value_string));
+        luaL_error(L, "enum '%s' value type mismatch expected: %s, got: %s. Value: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(f->type_id)), lua_typename(L, lua_value_type), value_string);
     }
 }
 
@@ -1785,7 +1786,9 @@ static void lpbV_field(lpb_Env *e, pb_Field *f) {
     default:
         int ltype = lua_type(L, -1);
         if (ltype != lpbV_matchtype(f->type_id)) {
-            luaL_error(L, "field '%s' type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(f->type_id)), lua_typename(L, ltype));
+            char value_string[TABLE_DUMP_BUFFER_SIZE] = {0};
+            lua_value_to_string(L, -1, value_string, sizeof(value_string));
+            luaL_error(L, "field '%s' type mismatch expected: %s, got: %s. Value: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(f->type_id)), lua_typename(L, ltype), value_string);
         }
     }
 }
@@ -1801,10 +1804,14 @@ static void lpbV_map(lpb_Env *e, pb_Field *f) {
         int lua_key_type = lua_type(L, -2);
         int lua_value_type = lua_type(L, -1);
         if (lua_key_type != lpbV_matchtype(kf->type_id)) {
-            luaL_error(L, "map '%s' key type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(kf->type_id)), lua_typename(L, lua_key_type));
+            char table_string[TABLE_DUMP_BUFFER_SIZE] = {0};
+            lua_table_to_string(L, -3, table_string, sizeof(table_string));
+            luaL_error(L, "map '%s' key type mismatch expected: %s, got: %s. Map: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(kf->type_id)), lua_typename(L, lua_key_type), table_string);
         }
         if (lua_value_type != lpbV_matchtype(vf->type_id)) {
-            luaL_error(L, "map '%s' value type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(vf->type_id)), lua_typename(L, lua_value_type));
+            char table_string[TABLE_DUMP_BUFFER_SIZE] = {0};
+            lua_table_to_string(L, -3, table_string, sizeof(table_string));
+            luaL_error(L, "map '%s' value type mismatch expected: %s, got: %s. Map: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(vf->type_id)), lua_typename(L, lua_value_type), table_string);
         }
         lpbV_field(e, vf);
         lua_pop(L, 1);
@@ -1819,7 +1826,9 @@ static void lpbV_repeated(lpb_Env *e, pb_Field *f) {
         lua53_rawgeti(L, -1, i);
         int lua_value_type = lua_type(L, -1);
         if (lua_value_type != lpbV_matchtype(f->type_id)) {
-            luaL_error(L, "array '%s' value type mismatch expected: %s, got: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(f->type_id)), lua_typename(L, lua_value_type));
+            char table_string[TABLE_DUMP_BUFFER_SIZE] = {0};
+            lua_table_to_string(L, -2, table_string, sizeof(table_string));
+            luaL_error(L, "array '%s' value type mismatch expected: %s, got: %s. Array: %s", (char *)f->name, lua_typename(L, lpbV_matchtype(f->type_id)), lua_typename(L, lua_value_type), table_string);
         }
         lpbV_field(e, f);
         lua_pop(L, 1);
@@ -1845,7 +1854,9 @@ static void lpb_validate(lpb_Env *e, pb_Type *t) {
             const char *name = lua_tolstring(L, -2, &name_len);
             pb_Field *f = pb_fname(t, pb_name(&e->LS->base, name));
             if (f == nullptr) {
-                luaL_error(L, "message '%s' table has unrecognized field '%s' of type: %s", (char *)t->name, name, lua_typename(L, lua_type(L, -1)));
+                char table_string[TABLE_DUMP_BUFFER_SIZE] = {0};
+                lua_table_to_string(L, -3, table_string, sizeof(table_string));
+                luaL_error(L, "message '%s' table has unrecognized field '%s' of type: %s. Message: %s", (char *)t->name, name, lua_typename(L, lua_type(L, -1)), table_string);
             } else {
                 for (int i = 0; i < field_names.Size(); ++i) {
                     if (strncmp(name, field_names[i], name_len + 1) == 0) {
@@ -1862,7 +1873,9 @@ static void lpb_validate(lpb_Env *e, pb_Type *t) {
                 }
             }
         } else {
-            luaL_error(L, "message '%s' table key type mismatch expected: %s, got: %s", (char *)t->name, lua_typename(L, LUA_TSTRING), lua_typename(L, lua_key_type));
+            char table_string[TABLE_DUMP_BUFFER_SIZE] = {0};
+            lua_table_to_string(L, -3, table_string, sizeof(table_string));
+            luaL_error(L, "message '%s' table key type mismatch expected: %s, got: %s. Message: %s", (char *)t->name, lua_typename(L, LUA_TSTRING), lua_typename(L, lua_key_type), table_string);
         }
         lua_pop(L, 1);
     }
@@ -1879,7 +1892,9 @@ static void lpb_validate(lpb_Env *e, pb_Type *t) {
                 strncat(names, ", ", remaining_len);
             }
         }
-        luaL_error(L, "message '%s' table has missing fields: %s", (char *)t->name, names);
+        char table_string[TABLE_DUMP_BUFFER_SIZE] = {0};
+        lua_table_to_string(L, -1, table_string, sizeof(table_string));
+        luaL_error(L, "message '%s' table has missing fields: %s. Message: %s", (char *)t->name, names, table_string);
     }
 }
 
@@ -1887,7 +1902,7 @@ static int Lpb_validate(lua_State *L) {
     lpb_State *LS = default_lstate(L);
     pb_Type *t = lpb_type(&LS->base, luaL_checkstring(L, 1));
     lpb_Env e;
-    argcheck(L, t != NULL, 1, "type '%s' does not exists", lua_tostring(L, 1));
+    argcheck(L, t != NULL, 1, "type '%s' does not exist", lua_tostring(L, 1));
     luaL_checktype(L, 2, LUA_TTABLE);
     e.L = L, e.LS = LS;
     lua_pushvalue(L, 2);
